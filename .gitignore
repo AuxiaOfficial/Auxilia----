@@ -7,3 +7,6 @@ shot-*.png
 .playwright-cli/
 
 Auxilia_*_x64-setup.exe
+
+.workbuddy/
+.codebuddy/
