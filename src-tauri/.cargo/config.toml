@@ -1,0 +1,4 @@
+# 工具链是 x86_64-pc-windows-gnu，必须显式指定 MinGW 链接器，否则链接阶段找不到 link.exe
+[target.x86_64-pc-windows-gnu]
+linker = "D:/mingw64/bin/gcc.exe"
+ar = "D:/mingw64/bin/ar.exe"

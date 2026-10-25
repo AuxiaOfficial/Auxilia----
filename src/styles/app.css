@@ -1,0 +1,61 @@
+@import "tailwindcss";
+@import "./tokens.css";
+
+/* ============================================================
+   Tailwind v4 token 映射
+   组件里用 bg-surface-1 / text-text-2 / rounded-md / p-4
+   禁止 bg-[#0A0A0A] 这种硬编码
+   ============================================================ */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-text-1: var(--text-1);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+  --color-text-dim: var(--text-dim);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-lg);
+  --radius-full: var(--r-full);
+
+  --ease-ios: var(--ease-out);
+}
+
+@layer base {
+  /* 焦点态只用极淡描边，不用系统蓝色 outline；输入框不画框，靠光标表达焦点 */
+  button:focus-visible,
+  a:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 1px var(--border-strong);
+  }
+  input:focus-visible,
+  textarea:focus-visible {
+    outline: none;
+  }
+  button {
+    background: none;
+    border: none;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+  input {
+    background: none;
+    border: none;
+    outline: none;
+    color: inherit;
+  }
+}

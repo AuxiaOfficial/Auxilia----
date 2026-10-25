@@ -1,0 +1,92 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Auxilia",
+  "version": "0.1.0",
+  "identifier": "com.auxilia.desktop",
+  "build": {
+    "beforeDevCommand": "",
+    "beforeBuildCommand": "",
+    "devUrl": "http://127.0.0.1:5183",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Auxilia",
+        "url": "index.html",
+        "width": 1100,
+        "height": 720,
+        "minWidth": 900,
+        "minHeight": 600,
+        "center": true,
+        "resizable": true,
+        "decorations": false,
+        "transparent": false,
+        "dragDropEnabled": false,
+        "visible": true,
+        "focus": true
+      },
+      {
+        "label": "mini",
+        "title": "Auxilia",
+        "url": "mini.html",
+        "width": 96,
+        "height": 26,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "dragDropEnabled": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "visible": false,
+        "focus": false
+      },
+      {
+        "label": "float",
+        "title": "Auxilia",
+        "url": "float.html",
+        "width": 220,
+        "height": 64,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "dragDropEnabled": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "visible": false,
+        "focus": false
+      },
+      {
+        "label": "flash",
+        "title": "Auxilia",
+        "url": "flash.html",
+        "width": 800,
+        "height": 600,
+        "fullscreen": true,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "dragDropEnabled": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "visible": false,
+        "focus": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/icon.ico"],
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper" }
+    }
+  }
+}

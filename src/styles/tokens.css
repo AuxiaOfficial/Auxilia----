@@ -1,0 +1,146 @@
+/* ============================================================
+   Auxilia · 设计变量 · 唯一颜色来源
+   组件里禁止写色值，一律 var(--x)
+   ============================================================ */
+
+:root {
+  /* ---------- 颜色 ---------- */
+  --bg: #000000;                        /* 全局背景，纯黑 */
+  --surface-1: #0b0b0b;                 /* 卡片、任务项 */
+  --surface-2: #141414;                 /* 输入框、悬浮层 */
+  --surface-3: #1e1e1e;                 /* hover 态 */
+  --border: rgba(255, 255, 255, 0.08);  /* 极淡描边，能不用就不用 */
+  --border-strong: rgba(255, 255, 255, 0.16);
+  /* 灰阶只分两层：亮（主文字）+ 次（所有说明文字）。
+     之前 text-3 太暗，整屏发灰、该看清的看不清，这里统一提亮并合并成同一层。 */
+  --text-1: #f3f3f3;                    /* 主文字 */
+  --text-2: #a8a8a8;                    /* 次文字（正文说明、标签） */
+  --text-3: #a8a8a8;                    /* 与 text-2 同层，保留变量名避免大改组件 */
+  --text-dim: #5f5f5f;                  /* 仅用于占位符、快捷键提示这类不显眼内容 */
+  --accent: #e8e8e8;                    /* 反色按钮底色 */
+  --accent-fg: #000000;                 /* 反色按钮文字 */
+  --warn: #ffb84d;                      /* 仅倒计时最后 60 秒 */
+  --danger: #ff5a5a;                    /* 仅删除确认 */
+
+  /* 两栏极淡背景（不是描边，靠层次区分） */
+  --panel-tint: rgba(255, 255, 255, 0.02);
+  --panel-tint-strong: rgba(255, 255, 255, 0.035);
+
+  /* 数据可视化（只用 accent 的透明度阶梯） */
+  --heat-0: rgba(255, 255, 255, 0.04);
+  --heat-1: rgba(232, 232, 232, 0.16);
+  --heat-2: rgba(232, 232, 232, 0.32);
+  --heat-3: rgba(232, 232, 232, 0.55);
+  --heat-4: rgba(232, 232, 232, 0.82);
+
+  /* ---------- 字体 ---------- */
+  --font-sans: "Inter var", -apple-system, "SF Pro Text", "PingFang SC",
+    "Microsoft YaHei", "Segoe UI", sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", Consolas, monospace;
+
+  --fs-11: 11px;   /* 快捷键提示、角标 */
+  --fs-13: 13px;   /* 次要正文 */
+  --fs-15: 15px;   /* 正文、列表项 */
+  --fs-18: 18px;   /* 小标题 */
+  --fs-24: 24px;   /* 区块标题 */
+  --fs-32: 32px;   /* slogan */
+  --fs-72: 72px;   /* 大计时器 */
+
+  /* ---------- 形状 ---------- */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-full: 999px;
+
+  /* ---------- 间距（4 的倍数） ---------- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-12: 48px;
+
+  /* ---------- 动效 ---------- */
+  --ease-out: cubic-bezier(0.32, 0.72, 0, 1);
+  --dur-fast: 140ms;
+  --dur-base: 220ms;
+  --dur-slow: 380ms;
+
+  /* ---------- 布局 ---------- */
+  --sidebar-w: 260px;
+  --rightbar-w: 380px;
+  --titlebar-h: 38px;
+  --timer-size: 72px;
+  --center-max: 720px;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text-1);
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+  user-select: none;
+}
+
+* {
+  box-sizing: border-box;
+  /* 等宽数字：否则计时器每秒抖动 */
+  font-variant-numeric: tabular-nums;
+}
+
+input,
+textarea {
+  font-family: inherit;
+  user-select: text;
+}
+
+/* 数字输入框：去掉 WebView2 自带的上下箭头（它会飘在布局外面） */
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+::selection {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 透明窗口（mini / float / flash）专用：body 不能有纯黑底 */
+body.window-transparent,
+body.window-transparent #root {
+  background: transparent;
+}
+
+/* 拖拽区：无边框窗口靠它移动 */
+[data-tauri-drag-region] {
+  -webkit-app-region: drag;
+}

@@ -1,0 +1,50 @@
+[package]
+name = "auxilia"
+version = "0.1.0"
+description = "Auxilia — 不安排你的时间，只帮你看清时间"
+authors = ["Auxilia"]
+edition = "2021"
+rust-version = "1.77"
+
+# Tauri 2 桌面端只需要 rlib。
+# 不要加 cdylib/staticlib：GNU 工具链下 cdylib 的导出符号会超过 .def 序号上限
+# （linker error: export ordinal too large），这是 MinGW 特有的坑。
+[lib]
+name = "auxilia_lib"
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# tray-icon：托盘；image-png：从 PNG 载入托盘图标
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-single-instance = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-notification = "2"
+# 复盘导出：系统「选择文件夹」对话框
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# 数据库：按你的要求用 rusqlite（bundled，自带 SQLite，不依赖系统库），不用 tauri-plugin-sql
+rusqlite = { version = "0.32", features = ["bundled"] }
+tokio = { version = "1", features = ["time"] }
+# 导出码：flate2 的 raw deflate 与前端 pako.deflateRaw 完全兼容
+flate2 = "1"
+base64 = "0.22"
+
+# 只用于给浮窗切圆角（SetWindowRgn）：WebView2 的透明在部分机器上不可靠，
+# 直接把窗口区域裁成圆角矩形是最稳的做法。
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
