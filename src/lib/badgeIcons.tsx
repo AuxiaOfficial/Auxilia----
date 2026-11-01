@@ -10,9 +10,15 @@ import {
   Gem,
   Hourglass,
   Layers,
+  Leaf,
   Library,
+  Map,
   Medal,
   Moon,
+  MoonStar,
+  Orbit,
+  Pencil,
+  Star,
   NotebookPen,
   PenLine,
   Rocket,
@@ -50,6 +56,13 @@ const MAP: Record<string, LucideIcon> = {
   target: Target,
   award: Award,
   gem: Gem,
+  // 墙贴用到的图标
+  star: Star,
+  leaf: Leaf,
+  'moon-star': MoonStar,
+  orbit: Orbit,
+  map: Map,
+  pencil: Pencil,
 }
 
 export default function BadgeIcon({

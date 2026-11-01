@@ -82,15 +82,6 @@ export default function HomeView(): React.ReactElement {
             }}
           />
         </motion.h1>
-        <motion.p
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.38, ease: EASE, delay: 0.06 }}
-          className="mt-3 text-[13px] text-text-2"
-        >
-          它不替你安排，只帮你看清。
-        </motion.p>
-
         <div className="mt-10 flex flex-col gap-1" data-nav-container>
           <Entry
             icon={<Timer size={16} strokeWidth={1.5} />}

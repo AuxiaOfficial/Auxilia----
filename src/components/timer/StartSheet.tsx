@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { formatClock, formatTime } from '@/lib/time'
 import { useTaskStore } from '@/store/taskStore'
 import { useRunStore } from '@/store/runStore'
 import { useUiStore } from '@/store/uiStore'
+import { flowCoinsForCount, walletRepo } from '@/lib/db'
 
 const EASE = [0.32, 0.72, 0, 1] as const
 
@@ -17,9 +18,13 @@ export default function StartSheet(): React.ReactElement {
   const start = useRunStore((s) => s.start)
   const [prospect, setProspect] = useState('')
   const [busy, setBusy] = useState(false)
+  const typed = useRef(0)
 
   useEffect(() => {
-    if (taskId) setProspect('')
+    if (taskId) {
+      setProspect('')
+      typed.current = 0
+    }
   }, [taskId])
 
   const task = tasks.find((t) => t.id === taskId) ?? null
@@ -29,7 +34,15 @@ export default function StartSheet(): React.ReactElement {
     if (!task || busy) return
     setBusy(true)
     try {
-      await start(task, prospect.trim(), task.plannedSeconds)
+      const run = await start(task, prospect.trim(), task.plannedSeconds)
+      // 开始前写的预期也换心流币（只算手打的字）
+      if (run && typed.current >= 30) {
+        const coins = flowCoinsForCount(typed.current)
+        if (coins > 0) {
+          const granted = await walletRepo.grantFlow(`run:${run.runId}:prospect`, coins)
+          if (granted > 0) notify(`预期 +${granted} 心流币`)
+        }
+      }
       close()
       setView('focus')
     } catch (err) {
@@ -85,7 +98,22 @@ export default function StartSheet(): React.ReactElement {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault()
                   void submit()
+                  return
                 }
+                if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) typed.current += 1
+                else if (e.key === 'Backspace') typed.current = Math.max(0, typed.current - 1)
+              }}
+              onCompositionEnd={(e) => {
+                typed.current += e.data.length
+              }}
+              onPaste={(e) => {
+                // 粘贴照收，但不计心流币
+                e.preventDefault()
+                const text = e.clipboardData.getData('text')
+                const el = e.currentTarget
+                const start = el.selectionStart ?? el.value.length
+                const end = el.selectionEnd ?? el.value.length
+                setProspect(el.value.slice(0, start) + text + el.value.slice(end))
               }}
             />
 

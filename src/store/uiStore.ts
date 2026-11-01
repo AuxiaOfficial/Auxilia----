@@ -22,6 +22,8 @@ interface UiStore {
   startSheetTaskId: string | null
   /** 任务属性面板 */
   propsTaskId: string | null
+  /** 定时任务到点提醒（不自动开跑） */
+  scheduledDue: { taskId: string; title: string } | null
   toast: Toast | null
 
   setView(view: View): void
@@ -35,6 +37,7 @@ interface UiStore {
   closeStart(): void
   openProps(taskId: string): void
   closeProps(): void
+  setScheduledDue(item: { taskId: string; title: string } | null): void
   setFinish(taskId: string | null): void
   toggleSidebar(): void
   toggleRightbar(): void
@@ -53,6 +56,7 @@ export const useUiStore = create<UiStore>((set, get) => ({
   pendingStart: null,
   startSheetTaskId: null,
   propsTaskId: null,
+  scheduledDue: null,
   toast: null,
 
   setView(view) {
@@ -87,6 +91,9 @@ export const useUiStore = create<UiStore>((set, get) => ({
   },
   closeProps() {
     set({ propsTaskId: null })
+  },
+  setScheduledDue(item) {
+    set({ scheduledDue: item })
   },
   setFinish(taskId) {
     set({ finishTaskId: taskId, view: taskId ? 'finish' : 'home' })

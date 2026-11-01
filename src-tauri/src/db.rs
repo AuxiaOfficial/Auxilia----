@@ -28,6 +28,24 @@ impl Db {
         std::fs::create_dir_all(&dir)
             .map_err(|e| format!("无法创建应用数据目录 {}：{e}", dir.display()))?;
         let file = dir.join("auxilia.db");
+
+        // 迁移前留一份当日快照：schema 改动出过事故，不能再来一次。
+        if file.exists() {
+            let day = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() / 86_400)
+                .unwrap_or(0);
+            let backup = dir.join(format!("auxilia.db.bak-{day}"));
+            if !backup.exists() {
+                let _ = std::fs::copy(&file, &backup);
+                // WAL 里可能还有没落盘的事务，一起留档
+                let wal = dir.join("auxilia.db-wal");
+                if wal.exists() {
+                    let _ = std::fs::copy(&wal, dir.join(format!("auxilia.db.bak-{day}.wal")));
+                }
+            }
+        }
+
         let conn = Connection::open(&file)
             .map_err(|e| format!("无法打开数据库 {}：{e}", file.display()))?;
 
@@ -53,6 +71,54 @@ impl Db {
             [],
         )
         .map_err(|e| format!("回填 TaskLine 块时长失败：{e}"))?;
+
+        // 增量经济：装置（书/台灯）、心流币、纪元计数
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS owned_devices (
+               kind  TEXT PRIMARY KEY,
+               count INTEGER NOT NULL DEFAULT 0
+             );",
+        )
+        .map_err(|e| format!("创建装置表失败：{e}"))?;
+        ensure_column(&conn, "wallet", "flow_coin", "INTEGER")?;
+        ensure_column(&conn, "wallet", "era", "INTEGER")?;
+
+        // 装饰种类从 3 种扩到 6 种，但 001 里的 CHECK 会把新增种类挡掉。
+        // SQLite 改不了 CHECK，只能重建表：legacy_alter_table 保持子表外键仍指向 decorations。
+        let old_check: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type = 'table' AND name = 'decorations' AND sql NOT LIKE '%badge_style%'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        if old_check > 0 {
+            conn.execute_batch("PRAGMA foreign_keys = OFF; PRAGMA legacy_alter_table = ON;")
+                .map_err(|e| format!("准备重建装饰表失败：{e}"))?;
+            conn.execute_batch(
+                "BEGIN;
+                 ALTER TABLE decorations RENAME TO decorations_old;
+                 CREATE TABLE decorations (
+                   id    TEXT PRIMARY KEY,
+                   name  TEXT NOT NULL,
+                   kind  TEXT NOT NULL CHECK(kind IN ('sticker','frame','bg','shelf','plaque','badge_style')),
+                   price INTEGER NOT NULL,
+                   asset TEXT NOT NULL
+                 );
+                 INSERT OR IGNORE INTO decorations SELECT * FROM decorations_old;
+                 DROP TABLE decorations_old;
+                 COMMIT;",
+            )
+            .map_err(|e| format!("重建装饰表失败：{e}"))?;
+            conn.execute_batch("PRAGMA legacy_alter_table = OFF; PRAGMA foreign_keys = ON;")
+                .map_err(|e| format!("恢复外键设置失败：{e}"))?;
+        }
+        conn.execute(
+            "UPDATE wallet SET flow_coin = COALESCE(flow_coin, 0), era = COALESCE(era, 0) WHERE id = 1",
+            [],
+        )
+        .map_err(|e| format!("初始化钱包字段失败：{e}"))?;
 
         conn.execute_batch(MIGRATION_SEED)
             .map_err(|e| format!("执行 002_seed.sql 失败：{e}"))?;

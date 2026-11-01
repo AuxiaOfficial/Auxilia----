@@ -1,17 +1,52 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { achievementRepo, type UserBadgeWithMeta } from '@/lib/db'
-import type { WallItem } from '@/lib/types'
+import type { DecorationDef, WallItem } from '@/lib/types'
 import BadgeIcon from '@/lib/badgeIcons'
 
-const TIER: Record<string, { ring: string; face: string; text: string }> = {
-  // 只有黑白灰：靠明度差区分等级，而不是靠颜色
-  bronze: { ring: 'rgba(255,255,255,0.16)', face: 'radial-gradient(circle at 30% 25%, #3a3a3a, #161616)', text: '#b9b9b9' },
-  silver: { ring: 'rgba(255,255,255,0.28)', face: 'radial-gradient(circle at 30% 25%, #4a4a4a, #1b1b1b)', text: '#e2e2e2' },
-  gold: { ring: 'rgba(255,255,255,0.55)', face: 'radial-gradient(circle at 30% 25%, #6a6a6a, #232323)', text: '#ffffff' },
+/** 每张墙贴一个不同的图标，避免一排完全一样的小方块 */
+const STICKER_ICON: Record<string, string> = {
+  'sticker-star': 'star',
+  'sticker-leaf': 'leaf',
+  'sticker-moon': 'moon-star',
+  'sticker-orbit': 'orbit',
+  'sticker-atlas': 'map',
+  'sticker-pencil': 'pencil',
 }
 
-/** 装饰墙：把徽章拖到墙上，位置存在 wall_items 表 */
-export default function Wall({ badges }: { badges: UserBadgeWithMeta[] }): React.ReactElement {
+const TIER: Record<string, { ring: string; text: string }> = {
+  bronze: { ring: 'rgba(255,255,255,0.16)', text: '#b9b9b9' },
+  silver: { ring: 'rgba(255,255,255,0.28)', text: '#e2e2e2' },
+  gold: { ring: 'rgba(255,255,255,0.55)', text: '#ffffff' },
+}
+
+/** 底纹/边框全部用 CSS 生成，不再借用外部项目的图片 */
+const BG: Record<string, string> = {
+  'bg-grid':
+    'linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px) 0 0 / 100% 22px, linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px) 0 0 / 22px 100%',
+  'bg-paper': 'radial-gradient(120% 100% at 50% -10%, rgba(255,255,255,0.06), transparent 65%)',
+  'bg-night': 'linear-gradient(180deg, rgba(255,255,255,0.07), transparent 55%)',
+  'bg-aurora':
+    'radial-gradient(80% 60% at 20% 0%, rgba(255,255,255,0.09), transparent 70%), radial-gradient(70% 60% at 90% 20%, rgba(255,255,255,0.05), transparent 70%)',
+  'bg-galaxy':
+    'radial-gradient(60% 50% at 70% 10%, rgba(255,255,255,0.10), transparent 70%), radial-gradient(50% 40% at 15% 80%, rgba(255,255,255,0.05), transparent 70%)',
+}
+
+const FRAME: Record<string, string> = {
+  'frame-thin': '1px solid rgba(255,255,255,0.14)',
+  'frame-arch': '1px solid rgba(255,255,255,0.22)',
+  'frame-plaster': '6px double rgba(255,255,255,0.16)',
+  'frame-obsidian': '1px solid rgba(255,255,255,0.32)',
+}
+
+export default function Wall({
+  badges,
+  owned,
+  height = 240,
+}: {
+  badges: UserBadgeWithMeta[]
+  owned: DecorationDef[]
+  height?: number
+}): React.ReactElement {
   const [items, setItems] = useState<WallItem[]>([])
   const [drag, setDrag] = useState<string | null>(null)
 
@@ -21,6 +56,24 @@ export default function Wall({ badges }: { badges: UserBadgeWithMeta[] }): React
 
   const earned = badges.filter((b) => b.earnedAt !== null)
   const placed = new Set(items.map((i) => i.refId))
+
+  /** 同类装饰只挂最贵的那一件 */
+  const pick = useMemo(() => {
+    const best = (kind: DecorationDef['kind']): DecorationDef | null =>
+      owned.filter((d) => d.kind === kind).sort((a, b) => b.price - a.price)[0] ?? null
+    return {
+      bg: best('bg'),
+      frame: best('frame'),
+      plaque: best('plaque'),
+      shelf: best('shelf'),
+      metal: best('badge_style'),
+      stickers: owned.filter((d) => d.kind === 'sticker').sort((a, b) => b.price - a.price),
+    }
+  }, [owned])
+
+  const bg = pick.bg ? BG[pick.bg.id] : undefined
+  const frame = pick.frame ? FRAME[pick.frame.id] : undefined
+  const metal = pick.metal?.id === 'badge-gold' ? 'gold' : pick.metal?.id === 'badge-silver' ? 'silver' : null
 
   const place = async (code: string): Promise<void> => {
     if (items.length >= 24) return
@@ -54,31 +107,49 @@ export default function Wall({ badges }: { badges: UserBadgeWithMeta[] }): React
         }}
         className="relative w-full overflow-hidden rounded-lg"
         style={{
-          height: 260,
-          background:
-            'radial-gradient(120% 90% at 50% 0%, rgba(255,255,255,0.045), rgba(255,255,255,0.012) 55%, rgba(0,0,0,0) 100%)',
-          border: '1px solid var(--border)',
-          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)',
+          height,
+          background: bg
+            ? `${bg}, radial-gradient(120% 90% at 50% 0%, rgba(255,255,255,0.035), rgba(0,0,0,0) 70%)`
+            : 'radial-gradient(120% 90% at 50% 0%, rgba(255,255,255,0.035), rgba(0,0,0,0) 70%)',
+          border: frame ?? '1px solid var(--border)',
+          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)',
         }}
       >
-        {/* 极淡的水平层线，像陈列架 */}
-        {[0.36, 0.68].map((p) => (
-          <span
-            key={p}
-            className="pointer-events-none absolute inset-x-0 h-px"
-            style={{ top: `${p * 100}%`, background: 'rgba(255,255,255,0.045)' }}
-          />
-        ))}
+        {/* 层架：只在四角画角标，不做横贯整墙的分隔线 */}
+        {pick.shelf && (
+          <>
+            {[
+              { top: 8, left: 8, borderTop: '1px solid rgba(255,255,255,0.28)', borderLeft: '1px solid rgba(255,255,255,0.28)' },
+              { top: 8, right: 8, borderTop: '1px solid rgba(255,255,255,0.28)', borderRight: '1px solid rgba(255,255,255,0.28)' },
+              { bottom: 8, left: 8, borderBottom: '1px solid rgba(255,255,255,0.28)', borderLeft: '1px solid rgba(255,255,255,0.28)' },
+              { bottom: 8, right: 8, borderBottom: '1px solid rgba(255,255,255,0.28)', borderRight: '1px solid rgba(255,255,255,0.28)' },
+            ].map((s, i) => (
+              <span key={i} className="pointer-events-none absolute h-4 w-4" style={s} />
+            ))}
+          </>
+        )}
+
+        {pick.plaque && (
+          <div
+            className="pointer-events-none absolute left-4 top-3 rounded-sm px-2.5 py-1 text-[10px] uppercase tracking-[0.16em]"
+            style={{ background: 'rgba(10,10,10,0.72)', border: '1px solid var(--border-strong)', color: 'var(--text-2)' }}
+          >
+            收藏墙
+          </div>
+        )}
+
+        {(items.length > 0 || pick.stickers.length > 0 || earned.length === 0) && null}
 
         {items.length === 0 && (
           <p className="absolute inset-0 flex items-center justify-center text-[12px] text-text-dim">
-            点下面的徽章，把它放上墙
+            {earned.length === 0 ? '完成第一个任务，第一枚徽章就会出现在这里' : '点下面的徽章，把它放上墙'}
           </p>
         )}
 
         {items.map((item) => {
           const badge = badges.find((b) => b.code === item.refId)
-          const tier = TIER[badge?.tier ?? 'bronze'] ?? TIER['bronze']!
+          const base = TIER[badge?.tier ?? 'bronze'] ?? TIER['bronze']!
+          const tone = metal === 'gold' ? '#e8c866' : metal === 'silver' ? '#e6e6e6' : base.text
           return (
             <div
               key={item.id}
@@ -86,7 +157,7 @@ export default function Wall({ badges }: { badges: UserBadgeWithMeta[] }): React
                 e.currentTarget.releasePointerCapture(e.pointerId)
                 setDrag(item.id)
               }}
-              className="group absolute flex h-12 w-12 cursor-grab select-none items-center justify-center transition-transform duration-200 active:cursor-grabbing"
+              className="group absolute flex h-14 w-14 cursor-grab select-none items-center justify-center transition-transform duration-200 active:cursor-grabbing"
               style={{
                 left: `${item.x * 100}%`,
                 top: `${item.y * 100}%`,
@@ -94,26 +165,39 @@ export default function Wall({ badges }: { badges: UserBadgeWithMeta[] }): React
               }}
               title={badge?.name ?? item.refId}
             >
-              {/* 不要圆形底框，就让图标自己挂在墙上 */}
-              <span
-                style={{
-                  color: tier.text,
-                  filter: `drop-shadow(0 3px 10px ${tier.ring})`,
-                }}
-              >
-                <BadgeIcon name={badge?.icon ?? 'award'} size={26} strokeWidth={1.4} />
+              <span style={{ color: tone, filter: `drop-shadow(0 3px 12px ${base.ring})` }}>
+                <BadgeIcon name={badge?.icon ?? 'award'} size={30} strokeWidth={1.3} />
               </span>
-              <span
-                className="pointer-events-none absolute -bottom-5 whitespace-nowrap text-[10px] text-text-dim opacity-0 transition-opacity duration-fast group-hover:opacity-100"
-              >
+              <span className="pointer-events-none absolute -bottom-5 whitespace-nowrap text-[10px] text-text-dim opacity-0 transition-opacity duration-fast group-hover:opacity-100">
                 {badge?.name ?? item.refId}
               </span>
             </div>
           )
         })}
+
+        {/* 墙贴：用图标，不用外部素材 */}
+        {pick.stickers.length > 0 && (
+          <div className="pointer-events-none absolute bottom-4 left-4 flex items-end gap-2">
+            {pick.stickers.slice(0, 6).map((s, i) => (
+              <span
+                key={s.id}
+                className="flex h-9 w-9 items-center justify-center rounded-[3px]"
+                style={{
+                  background: 'rgba(255,255,255,0.06)',
+                  border: '1px solid rgba(255,255,255,0.10)',
+                  color: '#d8d8d8',
+                  transform: `rotate(${(i % 3) - 1}deg)`,
+                }}
+                title={s.name}
+              >
+                <BadgeIcon name={STICKER_ICON[s.id] ?? 'sparkles'} size={16} strokeWidth={1.3} />
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
-      {earned.length > 0 ? (
+      {earned.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-1.5">
           {earned.map((b) => (
             <button
@@ -128,8 +212,6 @@ export default function Wall({ badges }: { badges: UserBadgeWithMeta[] }): React
             </button>
           ))}
         </div>
-      ) : (
-        <p className="mt-3 text-[11px] text-text-dim">完成第一个任务，就能拿到第一枚徽章。</p>
       )}
     </div>
   )

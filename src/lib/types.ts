@@ -12,7 +12,7 @@ export type RunResult = 'completed' | 'aborted' | 'crashed'
 export type Period = 'daily' | 'weekly' | 'monthly'
 export type BadgeTier = 'bronze' | 'silver' | 'gold'
 export type WallKind = 'decoration' | 'badge' | 'task'
-export type DecorationKind = 'sticker' | 'frame' | 'bg'
+export type DecorationKind = 'sticker' | 'frame' | 'bg' | 'shelf' | 'plaque' | 'badge_style'
 
 export interface Task {
   id: string
@@ -149,6 +149,36 @@ export interface WallItem {
   y: number
   scale: number
   z: number
+}
+
+/** 两套钱包：coin 会随装置膨胀，flowCoin（心流币）永不贬值 */
+export interface Wallet {
+  coin: number
+  flowCoin: number
+  era: number
+}
+
+/** 装置：只在专注时段产币 */
+export interface DeviceDef {
+  kind: string
+  name: string
+  hint: string
+  unlockSeconds: number
+  basePrice: number
+  growth: number
+  cap: number
+  owned: number
+  /** 下一件价格 */
+  price: number
+}
+
+export interface DecorationDef {
+  id: string
+  name: string
+  kind: DecorationKind
+  price: number
+  asset: string
+  owned: boolean
 }
 
 /** 复盘页里展示的一条历史运行记录（含当时写的三问） */

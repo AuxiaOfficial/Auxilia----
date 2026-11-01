@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { ArrowRight, Check } from 'lucide-react'
 import { formatClock, liveActiveSeconds } from '@/lib/time'
@@ -6,6 +6,7 @@ import { useRunStore } from '@/store/runStore'
 import { useTaskStore } from '@/store/taskStore'
 import { useUiStore } from '@/store/uiStore'
 import { useSettingsStore } from '@/store/settingsStore'
+import { flowCoinsForCount, walletRepo } from '@/lib/db'
 import { useNow } from '@/hooks/useNow'
 
 const EASE = [0.32, 0.72, 0, 1] as const
@@ -17,6 +18,7 @@ export default function FinishFlow(): React.ReactElement {
   const notify = useUiStore((s) => s.notify)
   const runs = useRunStore((s) => s.runs)
   const finish = useRunStore((s) => s.finish)
+  const extend = useRunStore((s) => s.extend)
   const tasks = useTaskStore((s) => s.tasks)
   const reviewEnabled = useSettingsStore((s) => s.reviewEnabled)
   const reviewQuestions = useSettingsStore((s) => s.reviewQuestions)
@@ -30,6 +32,8 @@ export default function FinishFlow(): React.ReactElement {
   const [draft, setDraft] = useState('')
   const [result, setResult] = useState<{ coin: number; seconds: number; level: number } | null>(null)
   const [busy, setBusy] = useState(false)
+  /** 亲手敲进去的有效字数（粘贴/批量插入不计） */
+  const typed = useRef(0)
 
   const task = tasks.find((t) => t.id === taskId) ?? null
   const run = runs.find((r) => r.taskId === taskId) ?? null
@@ -55,6 +59,15 @@ export default function FinishFlow(): React.ReactElement {
       const a = useAnswers ? answers : []
       const res = await finish(taskId, a[0] ?? '', a[1] ?? '', a[2] ?? '')
       await useTaskStore.getState().fetch()
+
+      // 反思换心流币：只算「亲手敲进去」的字数（粘贴、批量插入不计），按 runId 去重
+      if (run && useAnswers) {
+        const coins = flowCoinsForCount(typed.current)
+        if (coins > 0) {
+          const granted = await walletRepo.grantFlow(`run:${run.runId}:reflect`, coins)
+          if (granted > 0) notify(`这一轮反思 +${granted} 心流币（${typed.current} 字）`)
+        }
+      }
       if (goHome) {
         // 「跳过」= 结算完直接回去，不摆结果页
         setFinish(null)
@@ -134,6 +147,31 @@ export default function FinishFlow(): React.ReactElement {
               >
                 跳过，直接回去（照常结算）
               </button>
+
+              {task.durationMode === 'countdown' && (
+                <div className="mt-7 flex items-center gap-2">
+                  <span className="text-[11.5px] text-text-dim">还没做完？再给我</span>
+                  {[5, 10, 20].map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        void (async () => {
+                          await extend(taskId, m * 60)
+                          setFinish(null)
+                          setView('focus')
+                          notify(`已延时 ${m} 分钟`)
+                        })()
+                      }}
+                      className="h-7 rounded-full px-3 text-[11.5px] text-text-1 transition-colors duration-fast hover:bg-surface-2 disabled:opacity-40"
+                      style={{ background: 'var(--surface-1)' }}
+                    >
+                      {m} 分钟
+                    </button>
+                  ))}
+                </div>
+              )}
             </motion.div>
           )}
 
@@ -162,7 +200,26 @@ export default function FinishFlow(): React.ReactElement {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault()
                     submitAnswer()
+                    return
                   }
+                  // 只统计单个可打印字符；组合输入交给 compositionend
+                  if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                    typed.current += 1
+                  } else if (e.key === 'Backspace') {
+                    typed.current = Math.max(0, typed.current - 1)
+                  }
+                }}
+                onCompositionEnd={(e) => {
+                  typed.current += e.data.length
+                }}
+                onPaste={(e) => {
+                  // 粘贴内容照收，但不计入心流币
+                  e.preventDefault()
+                  const text = e.clipboardData.getData('text')
+                  const el = e.currentTarget
+                  const start = el.selectionStart ?? el.value.length
+                  const end = el.selectionEnd ?? el.value.length
+                  setDraft(el.value.slice(0, start) + text + el.value.slice(end))
                 }}
                 className="mt-5 w-full resize-none rounded-md px-4 py-3 text-[13.5px] leading-relaxed text-text-1"
                 style={{ background: 'var(--surface-1)' }}

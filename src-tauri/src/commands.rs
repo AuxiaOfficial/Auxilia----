@@ -111,6 +111,19 @@ pub async fn run_resume(
 }
 
 #[tauri::command]
+pub async fn run_extend(
+    app: AppHandle,
+    db: State<'_, Db>,
+    engine_state: State<'_, Engine>,
+    task_id: String,
+    extra_seconds: i64,
+) -> Result<RunSnapshot, String> {
+    let snap = engine::run_extend(db.inner(), engine_state.inner(), &app, &task_id, extra_seconds)?;
+    sync_run_windows(&app, &snap.display_mode);
+    Ok(snap)
+}
+
+#[tauri::command]
 pub async fn run_finish(
     app: AppHandle,
     db: State<'_, Db>,
@@ -148,6 +161,94 @@ pub async fn run_abort(
 #[tauri::command]
 pub async fn runs_active(engine_state: State<'_, Engine>) -> Result<Vec<RunSnapshot>, String> {
     Ok(engine_state.inner().active())
+}
+
+/* ============================================================
+   增量经济：买装置（coin）/ 买装饰（心流币）
+   ============================================================ */
+
+#[tauri::command]
+pub async fn device_buy(db: State<'_, Db>, kind: String) -> Result<i64, String> {
+    db.inner().with(|conn| {
+        let txn = conn.transaction().map_err(|e| format!("开启事务失败：{e}"))?;
+        let (base_price, growth, cap): (i64, f64, i64) = txn
+            .query_row(
+                "SELECT base_price, growth, cap FROM devices WHERE kind = ?1",
+                rusqlite::params![&kind],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .map_err(|_| "没有这个装置".to_string())?;
+        let owned: i64 = txn
+            .query_row(
+                "SELECT COALESCE(count,0) FROM owned_devices WHERE kind = ?1",
+                rusqlite::params![&kind],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        if owned >= cap {
+            return Err("这类装置已经满了".to_string());
+        }
+        let price = (base_price as f64 * growth.powi(owned as i32)).round() as i64;
+        let coin: i64 = txn
+            .query_row("SELECT coin FROM wallet WHERE id = 1", [], |row| row.get(0))
+            .map_err(|e| format!("读取钱包失败：{e}"))?;
+        if coin < price {
+            return Err(format!("coin 不足，还差 {}", price - coin));
+        }
+        txn.execute("UPDATE wallet SET coin = coin - ?1 WHERE id = 1", rusqlite::params![price])
+            .map_err(|e| format!("扣款失败：{e}"))?;
+        txn.execute(
+            "INSERT INTO owned_devices (kind, count) VALUES (?1, 1)
+             ON CONFLICT(kind) DO UPDATE SET count = count + 1",
+            rusqlite::params![&kind],
+        )
+        .map_err(|e| format!("写入装置失败：{e}"))?;
+        let left = coin - price;
+        txn.commit().map_err(|e| format!("提交事务失败：{e}"))?;
+        Ok(left)
+    })
+}
+
+#[tauri::command]
+pub async fn decoration_buy_flow(db: State<'_, Db>, id: String) -> Result<i64, String> {
+    db.inner().with(|conn| {
+        let txn = conn.transaction().map_err(|e| format!("开启事务失败：{e}"))?;
+        let price: i64 = txn
+            .query_row(
+                "SELECT price FROM decorations WHERE id = ?1",
+                rusqlite::params![&id],
+                |row| row.get(0),
+            )
+            .map_err(|_| "没有这个装饰".to_string())?;
+        let owned: i64 = txn
+            .query_row(
+                "SELECT COUNT(*) FROM owned_decorations WHERE decoration_id = ?1",
+                rusqlite::params![&id],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        let flow: i64 = txn
+            .query_row("SELECT COALESCE(flow_coin,0) FROM wallet WHERE id = 1", [], |row| row.get(0))
+            .map_err(|e| format!("读取钱包失败：{e}"))?;
+        if owned > 0 {
+            return Ok(flow);
+        }
+        if flow < price {
+            return Err(format!("心流币不足，还差 {} 枚", price - flow));
+        }
+        txn.execute(
+            "UPDATE wallet SET flow_coin = COALESCE(flow_coin,0) - ?1 WHERE id = 1",
+            rusqlite::params![price],
+        )
+        .map_err(|e| format!("扣款失败：{e}"))?;
+        txn.execute(
+            "INSERT INTO owned_decorations (decoration_id, bought_at) VALUES (?1, ?2)",
+            rusqlite::params![&id, crate::models::now_ms()],
+        )
+        .map_err(|e| format!("写入已购装饰失败：{e}"))?;
+        txn.commit().map_err(|e| format!("提交事务失败：{e}"))?;
+        Ok(flow - price)
+    })
 }
 
 /* ============================================================

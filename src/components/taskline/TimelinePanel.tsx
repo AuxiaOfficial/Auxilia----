@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'motion/react'
 import { ChevronDown, Plus, Trash2 } from 'lucide-react'
 import { formatMinuteOfDay } from '@/lib/time'
-import { transferRepo } from '@/lib/db'
+import { statsRepo, transferRepo } from '@/lib/db'
 import { useTaskStore } from '@/store/taskStore'
 import { useTimelineStore } from '@/store/timelineStore'
 import { useUiStore } from '@/store/uiStore'
@@ -41,6 +41,19 @@ export default function TimelinePanel(): React.ReactElement {
   const openMenu = useMenuStore((s) => s.openAt)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const [draggingEntry, setDraggingEntry] = useState<string | null>(null)
+  const [doneToday, setDoneToday] = useState<Record<string, number>>({})
+
+  // 今天已完成的任务在时间轴里低亮。同一个任务排了几块时，
+  // 完成几次就只低亮几块（按时间顺序从早到晚消耗）。
+  useEffect(() => {
+    let alive = true
+    void statsRepo.completedCountsToday().then((map) => {
+      if (alive) setDoneToday(map)
+    })
+    return () => {
+      alive = false
+    }
+  }, [entries.length])
 
   const active = lines.find((l) => l.id === activeId) ?? lines[0] ?? null
   const startHour = active?.startHour ?? 6
@@ -93,6 +106,9 @@ export default function TimelinePanel(): React.ReactElement {
       .sort((a, b) => a.minuteOfDay - b.minuteOfDay)[0]
     return Math.min(600, (next ? next.minuteOfDay : 1440) - self.minuteOfDay)
   }
+
+  // 渲染期消耗掉"完成额度"的副本，不能直接改 state
+  const doneBudget: Record<string, number> = { ...doneToday }
 
   const minuteFromY = (clientY: number): number => {
     const el = scrollRef.current
@@ -387,6 +403,10 @@ export default function TimelinePanel(): React.ReactElement {
               resizing?.id === entry.id && resizePreview ? resizePreview : entry.durationMinutes
             const blockH = Math.max(liveDuration * PX_PER_MIN, 18)
             const compact = blockH < 44
+            // 每个任务名下的完成次数是"额度"，按时间顺序一块一块用掉
+            const quota = doneBudget[entry.taskId] ?? 0
+            const done = quota > 0
+            if (done) doneBudget[entry.taskId] = quota - 1
             return (
             <div
               key={entry.id}
@@ -430,6 +450,8 @@ export default function TimelinePanel(): React.ReactElement {
                 right: 4,
                 background: draggingEntry === entry.id ? 'var(--surface-3)' : 'var(--surface-1)',
                 border: resizing?.id === entry.id ? '1px solid var(--border-strong)' : 'none',
+                // 今天已经做完的块低亮显示
+                opacity: done ? 0.42 : 1,
               }}
             >
               <span
@@ -439,6 +461,7 @@ export default function TimelinePanel(): React.ReactElement {
               <span
                 className={`min-w-0 flex-1 truncate text-text-1 ${compact ? 'text-[11.5px]' : 'mt-1 text-[12.5px]'}`}
               >
+                {done && <span className="mr-1 text-text-2">✓</span>}
                 {task.title}
               </span>
               <span

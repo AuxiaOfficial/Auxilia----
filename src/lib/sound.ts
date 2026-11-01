@@ -21,13 +21,15 @@ export function unlockAudio(): void {
   if (ac.state === 'suspended') void ac.resume()
 }
 
-/** 两声很轻的钟片音，整体 < 700ms，不刺耳 */
-export function playChime(): void {
+/** 两声很轻的钟片音，整体 < 700ms，不刺耳。volume: 0-100 */
+export function playChime(volume = 80): void {
   const ac = audio()
   if (!ac) return
+  const v = Math.max(0, Math.min(100, volume)) / 100
+  if (v === 0) return
   const now = ac.currentTime
   const master = ac.createGain()
-  master.gain.value = 0.09
+  master.gain.value = 0.09 * v
   master.connect(ac.destination)
 
   const notes = [

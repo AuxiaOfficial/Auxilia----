@@ -18,10 +18,12 @@ interface RunStore {
   initialized: boolean
   init(): Promise<void>
   refresh(): Promise<void>
-  start(task: Task, prospect: string, plannedSeconds: number): Promise<void>
+  start(task: Task, prospect: string, plannedSeconds: number): Promise<RunSnapshot | null>
   pause(taskId: string): Promise<void>
   resume(taskId: string): Promise<void>
   finish(taskId: string, outcome: string, moment: string, next: string): Promise<FinishResult>
+  /** 延时：倒计时归零后「再来 N 分钟」 */
+  extend(taskId: string, extraSeconds: number): Promise<void>
   abort(taskId: string): Promise<void>
 }
 
@@ -47,11 +49,13 @@ export const useRunStore = create<RunStore>((set, get) => ({
       void get().refresh()
       useUiStore.getState().setFinish(payload.taskId)
     })
-    await listen<{ taskId: string; title: string }>('scheduled:conflict', (payload) => {
-      useUiStore.getState().confirmStart(payload.taskId, payload.title)
+    // 定时任务到点：只是提醒，不替用户开跑
+    await listen<{ taskId: string; title: string }>('scheduled:due', (payload) => {
+      useUiStore.getState().setScheduledDue(payload)
     })
+    // 开机补办：错过触发时间的定时任务
     await listen<{ taskId: string; title: string }>('scheduled:missed', (payload) => {
-      useUiStore.getState().notify(`「${payload.title}」到点未开始，补上吗？`)
+      useUiStore.getState().setScheduledDue(payload)
     })
     await listen<{ taskId: string }>('run:recovered', (payload) => {
       void get().refresh()
@@ -75,11 +79,11 @@ export const useRunStore = create<RunStore>((set, get) => ({
     if (!isDesktop) {
       const run = devEngine.start(task, prospect, plannedSeconds)
       set({ runs: devEngine.active() })
-      void run
-      return
+      return run
     }
     const run = await runRepo.start(task.id, prospect, plannedSeconds)
     set({ runs: [...get().runs.filter((r) => r.taskId !== task.id), run] })
+    return run
   },
 
   async pause(taskId) {
@@ -99,6 +103,12 @@ export const useRunStore = create<RunStore>((set, get) => ({
       return
     }
     const run = await runRepo.resume(taskId)
+    set({ runs: get().runs.map((r) => (r.taskId === taskId ? run : r)) })
+  },
+
+  async extend(taskId, extraSeconds) {
+    if (!isDesktop) return
+    const run = await runRepo.extend(taskId, extraSeconds)
     set({ runs: get().runs.map((r) => (r.taskId === taskId ? run : r)) })
   },
 

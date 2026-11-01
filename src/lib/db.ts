@@ -11,6 +11,8 @@ import type {
   AchievementSummary,
   DailyStat,
   Decoration,
+  DecorationDef,
+  DeviceDef,
   NewTaskInput,
   OwnedDecoration,
   Review,
@@ -24,6 +26,7 @@ import type {
   TaskRun,
   TaskStat,
   UserBadge,
+  Wallet,
   WallItem,
 } from './types'
 
@@ -591,6 +594,10 @@ export const runRepo = {
     return call('run_finish', { taskId, outcome, reflectMoment, reflectNext })
   },
 
+  async extend(taskId: string, extraSeconds: number): Promise<RunSnapshot> {
+    return call<RunSnapshot>('run_extend', { taskId, extraSeconds })
+  },
+
   async abort(taskId: string): Promise<void> {
     await call('run_abort', { taskId })
   },
@@ -644,6 +651,25 @@ export const statsRepo = {
       seconds: num(r.seconds),
       runs: num(r.runs),
     }))
+  },
+
+  /**
+   * 今天每个任务完成了几次。
+   * 同一任务在 TaskLine 里可能排了好几条，完成 1 次只应该低亮 1 块 ——
+   * 所以这里返回次数而不是布尔值。
+   */
+  async completedCountsToday(): Promise<Record<string, number>> {
+    if (!isDesktop) return {}
+    const since = startOfDay()
+    const rows = await select<Row>(
+      `SELECT task_id AS id, COUNT(*) AS n FROM task_runs
+       WHERE result = 'completed' AND ended_at >= ?
+       GROUP BY task_id`,
+      [since],
+    )
+    const out: Record<string, number> = {}
+    for (const r of rows) out[str(r.id)] = num(r.n)
+    return out
   },
 
   async byTask(days = 30): Promise<TaskStat[]> {
@@ -884,6 +910,14 @@ export const reviewRepo = {
     return call<string>('review_default_dir')
   },
 
+  /** 记录某类复盘已经写过（否则「待写」红点永远消不掉） */
+  async markDone(period: 'daily' | 'weekly' | 'monthly'): Promise<void> {
+    if (!isDesktop) return
+    const col =
+      period === 'daily' ? 'last_daily_at' : period === 'weekly' ? 'last_weekly_at' : 'last_monthly_at'
+    await exec(`UPDATE review_settings SET ${col} = ? WHERE id = 1`, [Date.now()])
+  },
+
   async settings(): Promise<ReviewSettings> {
     if (!isDesktop) {
       return {
@@ -922,6 +956,121 @@ export const reviewRepo = {
 /* ============================================================
    导入导出（P9 接真实逻辑，这里先定义契约）
    ============================================================ */
+
+/* ============================================================
+   增量经济：coin（装置产出）/ 心流币（反思产出）
+   ============================================================ */
+
+export const walletRepo = {
+  async get(): Promise<Wallet> {
+    if (!isDesktop) return { coin: memory().coin, flowCoin: 0, era: 0 }
+    const rows = await select<Row>(
+      'SELECT coin, COALESCE(flow_coin,0) AS "flowCoin", COALESCE(era,0) AS era FROM wallet WHERE id = 1',
+    )
+    const r = rows[0]
+    return { coin: num(r?.coin), flowCoin: num(r?.flowCoin), era: num(r?.era) }
+  },
+
+  /** 心流币发放：key 唯一，重复内容不会重复给 */
+  async grantFlow(key: string, coins: number): Promise<number> {
+    if (coins <= 0) return 0
+    if (!isDesktop) {
+      memory().coin += 0
+      return 0
+    }
+    await exec(
+      `CREATE TABLE IF NOT EXISTS flow_grants (
+         key TEXT PRIMARY KEY, coins INTEGER NOT NULL, created_at INTEGER NOT NULL
+       )`,
+    )
+    const exists = await select<Row>('SELECT 1 AS x FROM flow_grants WHERE key = ?', [key])
+    if (exists.length > 0) return 0
+    await exec('INSERT INTO flow_grants (key, coins, created_at) VALUES (?,?,?)', [
+      key,
+      coins,
+      Date.now(),
+    ])
+    await exec('UPDATE wallet SET flow_coin = COALESCE(flow_coin,0) + ? WHERE id = 1', [coins])
+    return coins
+  },
+}
+
+export const deviceRepo = {
+  async catalog(): Promise<DeviceDef[]> {
+    if (!isDesktop) return []
+    const [defs, owned, focus] = await Promise.all([
+      select<Row>(
+        'SELECT kind, name, hint, unlock_seconds AS "unlockSeconds", base_price AS "basePrice", growth, cap FROM devices ORDER BY base_price ASC',
+      ),
+      select<Row>('SELECT kind, count FROM owned_devices'),
+      select<Row>(
+        "SELECT COALESCE(SUM(active_seconds),0) AS s FROM task_runs WHERE result = 'completed'",
+      ),
+    ])
+    const ownedMap = new Map(owned.map((o) => [str(o.kind), num(o.count)]))
+    const focused = num(focus[0]?.s)
+    return defs.map((d) => {
+      const kind = str(d.kind)
+      const count = ownedMap.get(kind) ?? 0
+      const growth = Number(d.growth) || 1.18
+      const base = num(d.basePrice)
+      const unlockSeconds = num(d.unlockSeconds)
+      return {
+        kind,
+        name: str(d.name),
+        hint: str(d.hint),
+        unlockSeconds,
+        basePrice: base,
+        growth,
+        cap: num(d.cap),
+        owned: count,
+        price: Math.round(base * Math.pow(growth, count)),
+        // 未解锁的装置不显示价格，由 UI 判断
+        ...(focused < unlockSeconds ? { price: -1 } : {}),
+      }
+    })
+  },
+
+  async buy(kind: string): Promise<number> {
+    if (!isDesktop) throw new Error('浏览器预览无法购买装置')
+    return call<number>('device_buy', { kind })
+  },
+}
+
+export const decorationRepo = {
+  async catalog(): Promise<DecorationDef[]> {
+    if (!isDesktop) return []
+    const [defs, owned] = await Promise.all([
+      select<Row>('SELECT id, name, kind, price, asset FROM decorations ORDER BY price ASC'),
+      select<Row>('SELECT decoration_id AS id FROM owned_decorations'),
+    ])
+    const set = new Set(owned.map((o) => str(o.id)))
+    return defs.map((d) => ({
+      id: str(d.id),
+      name: str(d.name),
+      kind: str(d.kind) as DecorationDef['kind'],
+      price: num(d.price),
+      asset: str(d.asset),
+      owned: set.has(str(d.id)),
+    }))
+  },
+
+  /** 装饰用心流币买（不走 coin，避免被装置通胀冲垮） */
+  async buy(id: string): Promise<number> {
+    if (!isDesktop) throw new Error('浏览器预览无法购买装饰')
+    return call<number>('decoration_buy_flow', { id })
+  },
+}
+
+/** 反思字数 → 心流币：30 字起算，每 20 字 1 枚，无日限 */
+export function flowCoinsForCount(typedChars: number): number {
+  if (typedChars < 30) return 0
+  return Math.floor(typedChars / 20)
+}
+
+export function flowCoinsFor(text: string): number {
+  return flowCoinsForCount(text.replace(/[\s\p{P}]/gu, '').length)
+}
 
 export const transferRepo = {
   async exportTasks(ids: string[]): Promise<string> {

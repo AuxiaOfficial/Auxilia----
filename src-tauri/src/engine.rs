@@ -111,6 +111,13 @@ impl Engine {
         }
     }
 
+    /// 延时之后要允许再次触发归零
+    fn unfire(&self, run_id: &str) {
+        if let Ok(mut inner) = self.inner.lock() {
+            inner.fired.remove(run_id);
+        }
+    }
+
     fn paused_at(&self, task_id: &str) -> Option<i64> {
         let inner = self.inner.lock().ok()?;
         inner.paused_at.get(task_id).copied()
@@ -255,6 +262,36 @@ pub fn run_start(
     Ok(snapshot)
 }
 
+/// 延时：倒计时归零后用户可以选择「再来 5/10/20 分钟」。
+/// 语义是延长这一轮的剩余时间（继续计时），不改任务的计划时长。
+pub fn run_extend(
+    db: &Db,
+    engine: &Engine,
+    app: &AppHandle,
+    task_id: &str,
+    extra_seconds: i64,
+) -> Result<RunSnapshot, String> {
+    let snap = engine
+        .get(task_id)
+        .ok_or_else(|| "该任务当前没有在计时".to_string())?;
+    if snap.mode != "countdown" {
+        return Err("只有倒计时任务可以延时".to_string());
+    }
+    if snap.segment_started_at.is_none() {
+        run_resume(db, engine, app, task_id)?;
+    }
+    let extra = extra_seconds.clamp(60, 3600);
+    let updated = engine
+        .update_run(task_id, |run| {
+            run.planned_seconds += extra;
+        })
+        .ok_or_else(|| "该任务当前没有在计时".to_string())?;
+    // 归零标记要清掉，否则延时结束后不会再触发一次结束流程
+    engine.unfire(&updated.run_id);
+    emit_runs(app, engine);
+    Ok(updated)
+}
+
 pub fn run_pause(db: &Db, engine: &Engine, app: &AppHandle, task_id: &str) -> Result<RunSnapshot, String> {
     let snap = engine
         .get(task_id)
@@ -389,9 +426,25 @@ pub fn run_finish(
                 |row| row.get(0),
             )
             .map_err(|e| format!("统计专注时长失败：{e}"))?;
-        // 每分钟 1 coin，不足一分钟按一分钟算（短任务也应有正反馈）
-        let coin_earned = if active_seconds > 0 {
-            (active_seconds + 59) / 60
+        // coin = 专注时长 × 产出速率（基础 6/h + 装置），再乘纪元加成。
+        // 装置只在专注时段产币 —— 这里是唯一的结算点，暂停/后台天然不计。
+        let (books, lamps): (i64, i64) = txn
+            .query_row(
+                "SELECT COALESCE(SUM(CASE WHEN kind = 'book' THEN count ELSE 0 END), 0),
+                        COALESCE(SUM(CASE WHEN kind = 'lamp' THEN count ELSE 0 END), 0)
+                 FROM owned_devices",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap_or((0, 0));
+        let eras: i64 = txn
+            .query_row("SELECT COALESCE(era, 0) FROM wallet WHERE id = 1", [], |row| row.get(0))
+            .unwrap_or(0);
+        let rate_per_hour =
+            (6.0 + 6.0 * books as f64 + 30.0 * lamps as f64) * (1.0 + 0.5 * eras as f64);
+        // 不满 10 分钟不给 coin：短到没进入状态的专注不该算产出
+        let coin_earned = if active_seconds >= 600 {
+            ((active_seconds as f64 / 3600.0) * rate_per_hour).round().max(1.0) as i64
         } else {
             0
         };
@@ -856,7 +909,7 @@ fn countdown_tick(db: &Db, engine: &Engine, app: &AppHandle, now: i64) {
 }
 
 /// ② scheduled 到点：空闲就自动开跑，有任务在跑就询问 + 顺延一个周期
-fn scheduled_tick(db: &Db, engine: &Engine, app: &AppHandle, now: i64) {
+fn scheduled_tick(db: &Db, _engine: &Engine, app: &AppHandle, now: i64) {
     let due = match db.with(|conn| -> Result<Vec<TaskRef>, String> {
         // 只看最近 60 秒内到点的：更早的错过的交给启动补办提醒（FR-E8）
         let mut stmt = conn
@@ -908,28 +961,10 @@ fn scheduled_tick(db: &Db, engine: &Engine, app: &AppHandle, now: i64) {
             eprintln!("[auxilia] {err}");
         }
 
-        let busy = !engine.active().is_empty();
-        if busy {
-            // 有任务在跑：通知前端询问是否打断，并把 scheduled_at 顺延一个周期（24h）
-            // 避免同一到点窗口反复触发（每 500ms 一次 tick）
-            if let Err(err) = db.with(|conn| -> Result<(), String> {
-                conn.execute(
-                    "UPDATE tasks SET scheduled_at = scheduled_at + 86400000, updated_at = ?1
-                     WHERE id = ?2 AND scheduled_at IS NOT NULL",
-                    rusqlite::params![now, &task.task_id],
-                )
-                .map(|_| ())
-                .map_err(|e| format!("顺延定时任务失败：{e}"))
-            }) {
-                eprintln!("[auxilia] {err}");
-            }
-            let _ = app.emit("scheduled:conflict", &task);
-        } else {
-            // 空闲：直接开跑（ephemeral，不弹窗，prospect 留空）
-            if let Err(err) = run_start(db, engine, app, &task.task_id, "", 0) {
-                eprintln!("[auxilia] 自动开始「{}」失败：{err}", task.title);
-            }
-        }
+        // 定时任务 = 到点提醒你「该做这件事了」，而不是替你开跑。
+        // 是否现在开始由用户决定（会议、吃药、打电话这类事本来就不该自动计时）。
+        let _ = app.emit("scheduled:due", &task);
+        let _ = crate::windows::show_main(app);
     }
 }
 

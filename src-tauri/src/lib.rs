@@ -51,12 +51,15 @@ pub fn run() {
             commands::run_start,
             commands::run_pause,
             commands::run_resume,
+            commands::run_extend,
             commands::run_finish,
             commands::run_abort,
             commands::runs_active,
             commands::hotkey_get,
             commands::hotkey_set,
             commands::badge_redeem,
+            commands::device_buy,
+            commands::decoration_buy_flow,
             commands::decoration_buy,
             commands::ui_toggle_main,
             commands::ui_show_main,
@@ -114,6 +117,8 @@ pub fn run() {
 
             // ④ 关闭主窗口 = 隐藏（真正退出只走托盘）
             if let Some(main) = app.get_webview_window("main") {
+                // 拉伸窗口时 WebView2 会先刷一帧白底 —— 把底色设成纯黑就不会闪
+                let _ = main.set_background_color(Some(tauri::window::Color(0, 0, 0, 255)));
                 let win = main.clone();
                 main.on_window_event(move |event| {
                     if let WindowEvent::CloseRequested { api, .. } = event {
@@ -130,9 +135,9 @@ pub fn run() {
                     let _ = win.set_background_color(Some(tauri::window::Color(0, 0, 0, 0)));
                     // 再把窗口区域裁成圆角：不依赖 WebView2 的透明合成
                     if label == "mini" {
-                        windows::round_window(&win, 13.0);
+                        windows::smooth_round(&win, 13.0);
                     } else if label == "float" {
-                        windows::round_window(&win, 12.0);
+                        windows::smooth_round(&win, 12.0);
                     }
                     let handle = win.clone();
                     win.on_window_event(move |event| {

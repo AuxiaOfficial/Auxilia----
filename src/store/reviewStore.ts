@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { reviewRepo } from '@/lib/db'
+import { flowCoinsFor, reviewRepo, walletRepo } from '@/lib/db'
 import { DAY, HOUR, startOfDay } from '@/lib/time'
 import type { Period, Review, ReviewSettings } from '@/lib/types'
 
@@ -15,8 +15,12 @@ function computeDue(s: ReviewSettings): Period | null {
     if (now >= dueDay && s.lastWeeklyAt < dueDay) return 'weekly'
   }
   if (s.monthlyOn) {
+    // 本月应写时间点：dom 号 monthlyHour 点
     const d = new Date(today)
-    if (d.getDate() >= s.monthlyDom && s.lastMonthlyAt < today - 30 * DAY) return 'monthly'
+    d.setDate(Math.min(s.monthlyDom, 28))
+    d.setHours(s.monthlyHour, 0, 0, 0)
+    const dueAt = d.getTime()
+    if (now >= dueAt && s.lastMonthlyAt < dueAt) return 'monthly'
   }
   return null
 }
@@ -58,7 +62,13 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
       periodEnd: now,
       contentMd: markdown,
     })
-    set({ reviews: [review, ...get().reviews], due: null })
+    // 标记这类复盘已写：不标记的话红点永远不会消失
+    await reviewRepo.markDone(period)
+    // 复盘也发心流币（按正文字数，30 字起算，每 20 字 1 枚）
+    const coins = flowCoinsFor(markdown)
+    if (coins > 0) await walletRepo.grantFlow(`review:${review.id}`, coins)
+    const settings = await reviewRepo.settings()
+    set({ reviews: [review, ...get().reviews], settings, due: computeDue(settings) })
     return review
   },
 }))

@@ -27,17 +27,60 @@ INSERT OR IGNORE INTO badges (code, name, description, icon, tier, reward_coin, 
   ('review_ten',     '复盘十篇',   '累计写完 10 篇复盘',    'book-open-check','silver', 80, '{"all":[{"gte":["reviews_count",10]}]}'),
   ('review_thirty',  '复盘三十篇', '累计写完 30 篇复盘',    'library',       'gold',   260, '{"all":[{"gte":["reviews_count",30]}]}');
 
+-- 老的四件装饰（价格后来调过，这里同步，避免老库还是旧价）
+UPDATE decorations SET price = 3,   name = '小星星',   asset = 'star'        WHERE id = 'sticker-star';
+UPDATE decorations SET price = 3,   name = '一片叶子', asset = 'leaf'        WHERE id = 'sticker-leaf';
+UPDATE decorations SET price = 8,   name = '细描边框', asset = 'frame-thin'  WHERE id = 'frame-thin';
+UPDATE decorations SET price = 30,  name = '网格底纹', asset = 'grid'        WHERE id = 'bg-grid';
+
 -- 老版本留下的徽章：图标/文案按新目录刷新（code 不变，已解锁状态保留）
 UPDATE badges SET icon = 'flag',           description = '完成第一个任务'      WHERE code = 'first_run';
 UPDATE badges SET icon = 'calendar-check', description = '连续 7 天有专注记录', name = '七日不断' WHERE code = 'week_streak';
 UPDATE badges SET icon = 'hourglass',      description = '累计专注满 100 小时'  WHERE code = 'hundred_hours';
 UPDATE badges SET icon = 'book-open-check',description = '累计写完 10 篇复盘', name = '复盘十篇' WHERE code = 'review_ten';
 
+-- 装置目录（增量线）：只在专注时段产币
+CREATE TABLE IF NOT EXISTS devices (
+  kind           TEXT PRIMARY KEY,
+  name           TEXT NOT NULL,
+  hint           TEXT NOT NULL,
+  unlock_seconds INTEGER NOT NULL DEFAULT 0,
+  base_price     INTEGER NOT NULL,
+  growth         REAL NOT NULL DEFAULT 1.18,
+  cap            INTEGER NOT NULL DEFAULT 20
+);
+INSERT OR REPLACE INTO devices (kind, name, hint, unlock_seconds, base_price, growth, cap) VALUES
+  ('book', '书',   '+6 coin / 小时',   0,    6,  1.15, 20),
+  ('lamp', '台灯', '+30 coin / 小时',  7200, 90, 1.18, 12);
+
+-- 装饰目录（只作用于装饰墙，用「心流币」购买，永不贬值）
 INSERT OR IGNORE INTO decorations (id, name, kind, price, asset) VALUES
-  ('sticker-star',  '小星星',     'sticker', 20,  'sticker-star'),
-  ('sticker-leaf',  '一片叶子',   'sticker', 20,  'sticker-leaf'),
-  ('frame-thin',    '细描边框',   'frame',   60,  'frame-thin'),
-  ('bg-grid',       '网格底纹',   'bg',      120, 'bg-grid');
+  ('sticker-star',     '小星星',       'sticker',     3,    'star'),
+  ('sticker-leaf',     '一片叶子',     'sticker',     3,    'leaf'),
+  ('frame-thin',       '细描边框',     'frame',       8,    'frame-thin'),
+  ('plaque-first',     '第一块铭牌',   'plaque',      10,   'plaque-1'),
+  ('bg-grid',          '网格底纹',     'bg',          30,   'grid'),
+  ('sticker-moon',     '一半月光',     'sticker',     40,   'moon'),
+  ('shelf-wood',       '木质层架',     'shelf',       60,   'shelf-wood'),
+  ('bg-paper',         '纸纹底纹',     'bg',          80,   'paper'),
+  ('sticker-pencil',   '铅笔记号',     'sticker',     100,  'pencil'),
+  ('badge-silver',     '银箔徽章',     'badge_style', 120,  'silver'),
+  ('frame-arch',       '拱形凹槽',     'frame',       200,  'frame-arch'),
+  ('bg-night',         '深夜底纹',     'bg',          260,  'night'),
+  ('sticker-orbit',    '星轨',         'sticker',     320,  'orbit'),
+  ('shelf-brass',      '黄铜层架',     'shelf',       380,  'shelf-brass'),
+  ('badge-gold',       '金箔徽章',     'badge_style', 450,  'gold'),
+  ('plaque-memory',    '纪念铭牌',     'plaque',      500,  'plaque-2'),
+  ('frame-plaster',    '石膏浮雕框',   'frame',       600,  'frame-plaster'),
+  ('bg-aurora',        '极光底纹',     'bg',          800,  'aurora'),
+  ('shelf-glass',      '玻璃展台',     'shelf',       1000, 'shelf-glass'),
+  ('badge-halo',       '徽章光晕',     'badge_style', 1200, 'halo'),
+  ('sticker-atlas',    '星图',         'sticker',     1400, 'atlas'),
+  ('plaque-archive',   '典藏铭牌',     'plaque',      1600, 'plaque-3'),
+  ('frame-obsidian',   '黑曜石框',     'frame',       2000, 'frame-obsidian'),
+  ('bg-galaxy',        '银河底纹',     'bg',          3000, 'galaxy'),
+  ('plaque-archive2',  '档案馆铭牌',   'plaque',      4500, 'plaque-4'),
+  ('shelf-gold',       '纯金展台',     'shelf',       6000, 'shelf-gold');
 
 -- 默认 TaskLine：时间轴需要一个可用的看板
 INSERT OR IGNORE INTO tasklines (id, name, start_hour, end_hour, sort_index, created_at)

@@ -8,11 +8,7 @@ import { useUiStore } from '@/store/uiStore'
 import ViewHeader from '@/components/ui/ViewHeader'
 import Toggle from '@/components/ui/Toggle'
 
-const FLASH_OPTIONS = [
-  { key: 'ripple', label: '水波扩散', hint: '从屏幕上方中点轻轻荡开' },
-  { key: 'plain', label: '整屏微亮', hint: '整块屏幕亮一下，很短' },
-  { key: 'off', label: '不闪', hint: '只弹窗 / 只响铃' },
-] as const
+
 
 function toAccelerator(e: KeyboardEvent): string | null {
   const parts: string[] = []
@@ -158,24 +154,24 @@ export default function SettingsView(): React.ReactElement {
             }}
           />
           <div className="px-4 py-3">
-            <p className="text-[13.5px] text-text-1">屏幕提示</p>
-            <div className="mt-2 flex flex-col gap-1">
-              {FLASH_OPTIONS.map((o) => (
-                <button
-                  key={o.key}
-                  type="button"
-                  onClick={() => {
-                    void settings.patch({ flashStyle: o.key })
-                    if (o.key !== 'off' && isDesktop) void call('ui_flash')
-                  }}
-                  className="flex items-center justify-between rounded-sm px-3 py-2 text-left transition-colors duration-fast"
-                  style={{ background: settings.flashStyle === o.key ? 'var(--surface-2)' : 'transparent' }}
-                >
-                  <span className="text-[12.5px] text-text-1">{o.label}</span>
-                  <span className="text-[11px] text-text-dim">{o.hint}</span>
-                </button>
-              ))}
+            <div className="flex items-center justify-between">
+              <p className="text-[13.5px] text-text-1">提示音音量</p>
+              <span className="text-[11px] text-text-dim">{settings.volume}%</span>
             </div>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={5}
+              value={settings.volume}
+              onChange={(e) => void settings.patch({ volume: Number(e.target.value) })}
+              onMouseUp={() => playChime(settings.volume)}
+              className="mt-3 h-1 w-full appearance-none rounded-full"
+              style={{
+                background: `linear-gradient(to right, var(--accent) ${settings.volume}%, var(--surface-3) ${settings.volume}%)`,
+                accentColor: 'var(--accent)',
+              }}
+            />
           </div>
         </Section>
 
@@ -221,6 +217,29 @@ export default function SettingsView(): React.ReactElement {
               <p className="mt-0.5 text-[11px] text-text-dim">启动后直接待在托盘，不弹窗口</p>
             </div>
             <AutostartToggle />
+          </div>
+        </Section>
+
+        <Section title="关于">
+          <div className="flex items-center justify-between px-4 py-3">
+            <div>
+              <p className="text-[13.5px] text-text-1">Auxilia 0.1.0</p>
+              <p className="mt-0.5 text-[11px] text-text-dim">设计与开发 · AuxiaOfficial</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                void navigator.clipboard
+                  .writeText('https://github.com/AuxiaOfficial/')
+                  .then(() => notify('GitHub 主页已复制'))
+              }}
+              className="text-[12px] text-text-2 transition-colors duration-fast hover:text-text-1"
+            >
+              github.com/AuxiaOfficial
+            </button>
+          </div>
+          <div className="px-4 py-3 text-[11px] leading-relaxed text-text-dim">
+            图标与文案由作者设计；徽章图标来自 lucide.dev。
           </div>
         </Section>
 

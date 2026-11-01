@@ -112,6 +112,32 @@ pub fn round_window(win: &WebviewWindow, radius: f64) {
 #[cfg(not(windows))]
 pub fn round_window(_win: &WebviewWindow, _radius: f64) {}
 
+/// 优先用 DWM 的原生圆角（Win11 会做抗锯齿），失败再退回窗口区域裁剪。
+/// 只做区域裁剪时边缘是硬切的，放大看会有锯齿 —— 这就是"像素锯齿"的来源。
+#[cfg(windows)]
+pub fn smooth_round(win: &WebviewWindow, radius: f64) {
+    use windows_sys::Win32::Graphics::Dwm::{
+        DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
+    };
+
+    let Ok(hwnd) = win.hwnd() else { return };
+    let pref: i32 = DWMWCP_ROUND as i32;
+    let _ = unsafe {
+        DwmSetWindowAttribute(
+            hwnd.0 as _,
+            DWMWA_WINDOW_CORNER_PREFERENCE as u32,
+            &pref as *const i32 as *const core::ffi::c_void,
+            std::mem::size_of::<i32>() as u32,
+        )
+    };
+    // 不管 DWM 成不成，都把窗口区域裁成圆角：
+    // 透明窗口上 DWM 圆角常常不生效，只有区域裁剪能保证不露黑底。
+    round_window(win, radius);
+}
+
+#[cfg(not(windows))]
+pub fn smooth_round(_win: &WebviewWindow, _radius: f64) {}
+
 /// 浮窗右键菜单。id 里带窗口 label，回到 app 层的 on_menu_event 统一处理。
 pub fn popup_window_menu(app: &AppHandle, label: &str) -> Result<(), String> {
     use tauri::menu::{Menu, MenuItem};

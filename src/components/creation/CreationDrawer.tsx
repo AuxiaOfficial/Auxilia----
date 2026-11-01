@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Check, X } from 'lucide-react'
 import DurationWheel from './DurationWheel'
@@ -28,11 +28,11 @@ export default function CreationDrawer(): React.ReactElement | null {
   const [seconds, setSeconds] = useState(25 * 60)
   const [scheduledAt, setScheduledAt] = useState('09:00')
   const [alertDialog, setAlertDialog] = useState(true)
-  const [alertFlash, setAlertFlash] = useState(false)
   const [alertSound, setAlertSound] = useState(false)
   const [display, setDisplay] = useState<DisplayMode>('topbar')
   const [savedId, setSavedId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const drawerRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -42,7 +42,6 @@ export default function CreationDrawer(): React.ReactElement | null {
     setMode('countdown')
     setSeconds(25 * 60)
     setAlertDialog(true)
-    setAlertFlash(false)
     setAlertSound(false)
     setDisplay('topbar')
     setSavedId(null)
@@ -50,10 +49,23 @@ export default function CreationDrawer(): React.ReactElement | null {
 
   // 每进入一步就把焦点放到第一个可选项上：这样上下键立刻可用，不用先点一下
   useEffect(() => {
-    if (!open || step === 'title' || step === 'done') return
+    if (!open || step === 'title') return
     const id = requestAnimationFrame(() => {
-      const el = document.querySelector<HTMLElement>('[data-creation-body] [data-nav-item]')
-      el?.focus()
+      const root = drawerRef.current
+      if (!root) return
+      // 完成页直接把焦点放到「马上开始」，回车就能开始
+      if (step === 'done') {
+        const primary = root.querySelector<HTMLElement>('[data-primary]')
+        if (primary) {
+          primary.focus()
+          return
+        }
+      }
+      const el = root.querySelector<HTMLElement>('[data-creation-body] [data-nav-item]')
+      // 没有可选项（比如提示力度这步只有开关）就把焦点收到抽屉本身，
+      // 否则焦点会掉到 body 上，回车事件根本不会冒泡到我们这儿
+      if (el) el.focus()
+      else root.focus()
     })
     return () => cancelAnimationFrame(id)
   }, [open, step])
@@ -81,7 +93,7 @@ export default function CreationDrawer(): React.ReactElement | null {
             ? new Date(`${new Date().toDateString()} ${scheduledAt}`).getTime() || null
             : null,
         alertDialog,
-        alertFlash,
+        alertFlash: false,
         alertSound,
         displayMode: display,
       }
@@ -118,11 +130,38 @@ export default function CreationDrawer(): React.ReactElement | null {
       >
         <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.72)' }} onClick={close} />
         <motion.div
+          ref={drawerRef}
+          tabIndex={-1}
+          onKeyDown={(e) => {
+            if (e.metaKey || e.ctrlKey || e.altKey) return
+            const root = drawerRef.current
+            if (!root) return
+            // 数字键直选当前这一步的选项
+            if (/^[1-9]$/.test(e.key)) {
+              const items = Array.from(
+                root.querySelectorAll<HTMLElement>('[data-creation-body] [data-nav-item]:not([disabled])'),
+              )
+              const target = items[Number(e.key) - 1]
+              if (target) {
+                e.preventDefault()
+                target.click()
+              }
+              return
+            }
+            // 回车 = 这一步的主按钮（textarea 除外）
+            if (e.key === 'Enter' && !(e.target instanceof HTMLTextAreaElement)) {
+              const primary = root.querySelector<HTMLElement>('[data-primary]')
+              if (primary) {
+                e.preventDefault()
+                primary.click()
+              }
+            }
+          }}
           initial={{ opacity: 0, y: 12, scale: 0.995 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 8 }}
           transition={{ duration: 0.32, ease: EASE }}
-          className="relative flex max-h-[86vh] w-full max-w-[560px] flex-col rounded-lg p-8"
+          className="relative flex max-h-[86vh] w-full max-w-[560px] flex-col rounded-lg p-8 outline-none"
           style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
         >
           <div className="flex items-start justify-between">
@@ -147,36 +186,25 @@ export default function CreationDrawer(): React.ReactElement | null {
             </button>
           </div>
 
-          <div
-            data-creation-body
-            className="mt-6 min-h-[140px] overflow-y-auto pr-1"
-            onKeyDown={(e) => {
-              // 统一键盘层：数字直选、Enter 走主按钮、上下交由焦点元素自己处理
-              if (e.metaKey || e.ctrlKey || e.altKey) return
-              if (/^[1-9]$/.test(e.key)) {
-                const items = Array.from(
-                  e.currentTarget.querySelectorAll<HTMLElement>('[data-nav-item]:not([disabled])'),
-                )
-                const target = items[Number(e.key) - 1]
-                if (target) {
-                  e.preventDefault()
-                  target.click()
-                }
-                return
-              }
-              if (e.key === 'Enter' && !(e.target instanceof HTMLTextAreaElement)) {
-                const primary = e.currentTarget.querySelector<HTMLElement>('[data-primary]')
-                if (primary) {
-                  e.preventDefault()
-                  primary.click()
-                }
-              }
-            }}
-          >
+          <div data-creation-body className="mt-6 min-h-[140px] overflow-y-auto pr-1">
             {step === 'title' && (
-              <p className="text-[13px] leading-relaxed text-text-3">
-                回车继续。名字随时能改，先把事说出来比想清楚更重要。
-              </p>
+              <>
+                <p className="text-[13px] leading-relaxed text-text-2">
+                  回车继续。名字随时能改，先把事说出来比想清楚更重要。
+                </p>
+                <div className="mt-4 flex justify-end">
+                  <button
+                    type="button"
+                    data-primary
+                    disabled={!canNext}
+                    onClick={() => setStep('lifecycle')}
+                    className="h-9 rounded-full px-6 text-[13px] font-medium transition-opacity duration-fast disabled:opacity-30"
+                    style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}
+                  >
+                    继续
+                  </button>
+                </div>
+              </>
             )}
 
             {step === 'lifecycle' && (
@@ -277,8 +305,7 @@ export default function CreationDrawer(): React.ReactElement | null {
 
             {step === 'alerts' && (
               <Group title="到点时怎么叫你">
-                <Toggle label="跳出软件弹窗" value={alertDialog} onChange={setAlertDialog} />
-                <Toggle label="屏幕闪一下" value={alertFlash} onChange={setAlertFlash} />
+                <Toggle label="弹出软件窗口" value={alertDialog} onChange={setAlertDialog} />
                 <Toggle label="响一声" value={alertSound} onChange={setAlertSound} />
                 <div className="mt-4 flex justify-end">
                   <NextButton onClick={() => setStep('display')} />
@@ -309,6 +336,7 @@ export default function CreationDrawer(): React.ReactElement | null {
                 <div className="mt-6 flex justify-end">
                   <button
                     type="button"
+                    data-primary
                     disabled={busy}
                     onClick={() => void save()}
                     className="h-9 rounded-full px-6 text-[13px] font-medium disabled:opacity-50"
@@ -342,6 +370,7 @@ export default function CreationDrawer(): React.ReactElement | null {
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
+                    data-primary
                     onClick={() => void startNow()}
                     className="h-9 rounded-full px-6 text-[13px] font-medium"
                     style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}

@@ -10,8 +10,9 @@ import Onboarding from '@/components/onboarding/Onboarding'
 import StartSheet from '@/components/timer/StartSheet'
 import TaskPropsSheet from '@/components/task/TaskPropsSheet'
 import ContextMenu from '@/components/ui/ContextMenu'
+import ScheduledReminder from '@/components/timer/ScheduledReminder'
 import Toaster from '@/components/ui/Toaster'
-import { call, isDesktop, windowHide } from '@/lib/ipc'
+import { isDesktop, windowHide } from '@/lib/ipc'
 import { playChime, unlockAudio } from '@/lib/sound'
 import { useUiStore } from '@/store/uiStore'
 import { useTaskStore } from '@/store/taskStore'
@@ -66,9 +67,8 @@ export default function App(): React.ReactElement {
       const settings = useSettingsStore.getState()
       const runs = useRunStore.getState().runs
       const run = runs[runs.length - 1] as RunSnapshot | undefined
-      const wantsFlash = run?.alertFlash || settings.flashStyle !== 'off'
-      if (wantsFlash && settings.flashStyle !== 'off') void call('ui_flash')
-      if (settings.sound || run?.alertSound) playChime()
+      // 弹窗置顶已经在 Rust 侧做完了，闪屏机制取消（用户 2026-11 决定）
+      if (settings.sound || run?.alertSound) playChime(settings.volume)
     }).then((un) => {
       if (alive) stop = un
       else un()
@@ -86,6 +86,19 @@ export default function App(): React.ReactElement {
       const ui = useUiStore.getState()
 
       if (mod && e.key.toLowerCase() === 'n') {
+        e.preventDefault()
+        ui.openCreation()
+        return
+      }
+      // 主界面回车 = 新建任务（键盘不该在鼠标和键盘之间来回跳）
+      if (
+        e.key === 'Enter' &&
+        !mod &&
+        ui.view === 'home' &&
+        !ui.creationOpen &&
+        !ui.startSheetTaskId &&
+        !ui.propsTaskId
+      ) {
         e.preventDefault()
         ui.openCreation()
         return
@@ -152,6 +165,7 @@ export default function App(): React.ReactElement {
       <CreationDrawer />
       <StartSheet />
       <TaskPropsSheet />
+      <ScheduledReminder />
       <ContextMenu />
       <Toaster />
     </div>
