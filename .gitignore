@@ -10,3 +10,5 @@ Auxilia_*_x64-setup.exe
 
 .workbuddy/
 .codebuddy/
+
+!release/Auxilia_*_x64-setup.exe
